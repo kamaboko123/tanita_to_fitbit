@@ -61,13 +61,16 @@ func (s *Syncr) Sync() error {
         }
     }
 
+    fmt.Printf("Found %d new data\n", len(add_data))
+
     for _, ad := range add_data {
-        fmt.Printf("Add data: %s (weight: %fkg, fat: %f%%)\n", ad.Date, ad.HealthPlanetData.Weight, ad.HealthPlanetData.BodyFat)
+        fmt.Printf("Upload data: %s (weight: %fkg, fat: %f%%): ", ad.Date, ad.HealthPlanetData.Weight, ad.HealthPlanetData.BodyFat)
         err = s.Fitbit.CreateWeightAndFatLog(ad.Date, ad.HealthPlanetData.Weight, ad.HealthPlanetData.BodyFat)
         if err != nil {
+            fmt.Println("Failed\n")
             return err
         }
-        fmt.Println("Success to add data")
+        fmt.Println("Success\n")
     }
 
     // add new data to fitbit
