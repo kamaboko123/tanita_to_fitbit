@@ -1,0 +1,10 @@
+{
+    "health_planet": {
+        "client_id": "PUT_YOUR_CLIENT_ID",
+        "client_secret": "PUT_YOUR_CLIENT_SECRET"
+    },
+    "fitbit": {
+        "client_id": "PUT_YOUR_CLIENT_ID",
+        "client_secret": "PUT_YOUR_CLIENT_SECRET"
+    }
+}
