@@ -187,7 +187,6 @@ func (a *Auth) GetToken(code string) (*Token, error) {
 
 func (a *Auth) RefreshToken() error{
     if !a.token.IsTokenNeedRefresh(){
-        fmt.Println("Token is not need to refresh")
         return nil
     }
     fmt.Println("Token is need to refresh")
