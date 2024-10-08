@@ -273,8 +273,8 @@ func (c *Client) CreateWeightLog(date time.Time, weight float64) error {
     }
     defer resp.Body.Close()
 
-    body, _ := ioutil.ReadAll(resp.Body)
-    fmt.Println(string(body))
+    //body, _ := ioutil.ReadAll(resp.Body)
+    //fmt.Println(string(body))
     
     if resp.StatusCode != 201 {
         return errors.New("Failed to create weight log")
