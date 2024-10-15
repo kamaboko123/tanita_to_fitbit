@@ -247,6 +247,7 @@ func (c *Client) GetWeightLog(date time.Time) (*WeightLogResponse, error) {
     }
 
     weight_log := WeightLogResponse{}
+    c.logger.Debug(fmt.Sprintf("[fitbit]Response: %s", body))
     err = json.Unmarshal(body, &weight_log)
 
     return &weight_log, nil
