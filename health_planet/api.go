@@ -11,6 +11,7 @@ import (
     "errors"
     "time"
     "strconv"
+    "log/slog"
 )
 
 type Auth struct {
@@ -19,6 +20,7 @@ type Auth struct {
     client_secret string
     token *Token
     dump_filepath string
+    Logger *slog.Logger
 }
 
 type Token struct {
@@ -34,6 +36,8 @@ type Token struct {
 type Client struct {
     url string
     auth *Auth
+    Logger *slog.Logger
+    Timezone *time.Location
 }
 
 
@@ -50,21 +54,27 @@ type InnerscanResponse struct {
 }
 
 type InnerscanData struct {
+    Date time.Time
     Weight float64
     BodyFat float64
+}
+
+func (d *InnerscanData) String() string {
+    return fmt.Sprintf("(%s)Weight: %f, BodyFat: %f", d.Date, d.Weight, d.BodyFat)
 }
 
 type InnerscanDataMap map[string]*InnerscanData
 
 const TokenRefreshThreshold = 60 * 60 * 24 * 7 // 1 week
 
-func NewAuth(url string, client_id string, client_secret string, dump_filepath string) *Auth {
+func NewAuth(url string, client_id string, client_secret string, dump_filepath string, logger *slog.Logger) *Auth {
     auth := Auth{
         url: url,
         client_id: client_id,
         client_secret: client_secret,
         dump_filepath: dump_filepath,
         token: nil,
+        Logger: logger,
     }
     auth.token = &Token{Create_date: 0}
 
@@ -98,6 +108,8 @@ func (t *Token) IsTokenExpired() bool {
 func (t *Token) IsTokenNeedRefresh() bool {
     return t.Create_date + t.ExpiresIn - TokenRefreshThreshold < time.Now().Unix()
 }
+
+
 
 func (a *Auth) LoadToken() error {
     data, err := ioutil.ReadFile(a.dump_filepath)
@@ -169,7 +181,7 @@ func (a *Auth) GetToken(code string) (*Token, error) {
         return nil, err
     }
     if resp.StatusCode != 200 {
-        return nil, errors.New("Failed to get token")
+        return nil, errors.New("[HealthPlanet]Failed to get token")
     }
 
     body, _ := ioutil.ReadAll(resp.Body)
@@ -192,7 +204,7 @@ func (a *Auth) RefreshToken() error{
     fmt.Println("Token is need to refresh")
 
     if a.token == nil {
-        return errors.New("Token is not initialized")
+        return errors.New("[HealthPlanet]Token is not initialized")
     }
 
     u, err := url.Parse(a.url)
@@ -219,7 +231,7 @@ func (a *Auth) RefreshToken() error{
         return err
     }
     if resp.StatusCode != 200 {
-        return errors.New("Failed to refresh token")
+        return errors.New("[HealthPlanet]Failed to refresh token")
     }
 
     body, _ := ioutil.ReadAll(resp.Body)
@@ -242,7 +254,7 @@ func (a *Auth) InitToken() error{
     // check dump file exists
     _, err := os.Stat(a.dump_filepath)
     if err == nil {
-        return errors.New("Token file already exists. If you want to reinitilize, please remove the file")
+        return errors.New("[HealthPlanet]Token file already exists. If you want to reinitilize, please remove the file")
     }
 
     url, err := a.GetAuthURL()
@@ -271,8 +283,8 @@ func (a *Auth) InitToken() error{
 }
 
 
-func NewClient(url string, auth *Auth) *Client{
-    return &Client{url: url, auth: auth}
+func NewClient(url string, auth *Auth, logger *slog.Logger, timezone *time.Location) *Client{
+    return &Client{url: url, auth: auth, Logger: logger, Timezone: timezone}
 }
 
 func (c *Client) GetInnerscanData() (InnerscanDataMap, error){
@@ -280,13 +292,19 @@ func (c *Client) GetInnerscanData() (InnerscanDataMap, error){
     if err != nil {
         return nil, err
     }
+    
+    current_date := time.Now().Add(-24 * 7 * time.Hour)
+    current_date_str := current_date.Format("20060102150405")
 
     u.Path = "/status/innerscan.json"
     q := u.Query()
     q.Set("access_token", c.auth.token.AccessToken)
+    q.Set("from", current_date_str)
     q.Set("tag", "6021,6022") // 6021: Weight, 6022: Body Fat
 
     u.RawQuery = q.Encode()
+
+    c.Logger.Debug(fmt.Sprintf("Access to: %s", u.String()))
 
     req, err := http.NewRequest("GET", u.String(), nil)
     if err != nil {
@@ -298,42 +316,49 @@ func (c *Client) GetInnerscanData() (InnerscanDataMap, error){
         return nil, err
     }
     if resp.StatusCode != 200 {
-        return nil, errors.New("Failed to get innerscan data")
+        return nil, errors.New("[HealthPlanet]Failed to get innerscan data")
     }
 
     body, _ := ioutil.ReadAll(resp.Body)
+    c.Logger.Debug(fmt.Sprintf("Response: %s", body))
     resp_data := InnerscanResponse{}
     err = json.Unmarshal(body, &resp_data)
     if err != nil {
         return nil, err
     }
 
-    return resp_data.GetInnerscanDataMap(), nil
+    return(resp_data.GetInnerscanDataMap(c.Timezone))
 }
 
-func (resp *InnerscanResponse) GetInnerscanDataMap() InnerscanDataMap {
-    map_data := make(InnerscanDataMap)
+func (resp *InnerscanResponse) GetInnerscanDataMap(timezone *time.Location) (InnerscanDataMap, error) {
+    ret := make(InnerscanDataMap)
+    
     for _, d := range resp.Data {
-        if _, ok := map_data[d.Date]; !ok {
-            map_data[d.Date] = &InnerscanData{}
+        if _, ok := ret[d.Date]; !ok {
+            ret[d.Date] = &InnerscanData{}
         }
+        date, err := time.ParseInLocation("200601021504", d.Date, timezone)
+        if err != nil {
+            return nil, err
+        }
+        ret[d.Date].Date = date
 
-        // TODO: error handling in conversion
         if d.Tag == "6021" {
             value, err := strconv.ParseFloat(d.KeyData, 64)
             if err != nil {
-                continue
+                return nil, err
             }
-            map_data[d.Date].Weight = value
+            ret[d.Date].Weight = value
         }
         if d.Tag == "6022" {
             value, err := strconv.ParseFloat(d.KeyData, 64)
             if err != nil {
-                continue
+                return nil, err
             }
-            map_data[d.Date].BodyFat = value
+            ret[d.Date].BodyFat = value
         }
     }
 
-    return map_data
+    return ret, nil
 }
+

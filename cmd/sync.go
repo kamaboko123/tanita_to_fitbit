@@ -21,35 +21,32 @@ func NewSyncr(hp_client *health_planet.Client, fb_client *fitbit.Client) *Syncr 
     return &Syncr{HealthPlanet: hp_client, Fitbit: fb_client}
 }
 
-func (s *Syncr) Sync() error {
+func (s *Syncr) Sync(dry bool) error {
     // get latest data from health planet
     hp_weight, err := s.HealthPlanet.GetInnerscanData()
     if err != nil {
         return err
     }
+    Logger.Debug(fmt.Sprintf("Get %d data from Health Planet", len(hp_weight)))
+    Logger.Debug(fmt.Sprintf("Latest data: %s", hp_weight))
 
     var add_data []AddData
 
     // compare latest data
-    is_exist := false
-    for hd, hw := range hp_weight {
-        _hd, err := time.Parse("200601021504", hd)
-        if err != nil {
-            return err
-        }
+    for _, hpw := range hp_weight {
+        Logger.Debug(fmt.Sprintf("[Health Planet(expect)] %s", hpw))
         
         // この日付のデータがすでにFitbitに存在するか確認
-        fb_weight, err := s.Fitbit.GetWeightLog(_hd)
+        fb_weight_resp, err := s.Fitbit.GetWeightLog(hpw.Date)
         if err != nil {
             return err
         }
-        for _, fw := range fb_weight.Weight {
-            _fd, err := time.Parse("2006-01-02 15:04:05", fmt.Sprintf("%s %s", fw.Date, fw.Time))
-            if err != nil {
-                return err
-            }
+        fb_weight := fb_weight_resp.ToWeightLog(s.Fitbit.Timezone)
 
-            if _hd == _fd {
+        Logger.Debug(fmt.Sprintf("[Fitbit(targets)] %s", fb_weight))
+        is_exist := false
+        for _, fbw := range fb_weight {
+            if hpw.Date.Equal(fbw.Date) {
                 // 日付が一致した場合はすでにデータが存在しているのでスキップ
                 is_exist = true
                 break
@@ -57,20 +54,23 @@ func (s *Syncr) Sync() error {
         }
 
         if !is_exist {
-            add_data = append(add_data, AddData{Date: _hd, HealthPlanetData: hw})
+            add_data = append(add_data, AddData{Date: hpw.Date, HealthPlanetData: hpw})
         }
     }
 
     fmt.Printf("Found %d new data\n", len(add_data))
 
     for _, ad := range add_data {
-        fmt.Printf("Upload data: %s (weight: %fkg, fat: %f%%): ", ad.Date, ad.HealthPlanetData.Weight, ad.HealthPlanetData.BodyFat)
-        err = s.Fitbit.CreateWeightAndFatLog(ad.Date, ad.HealthPlanetData.Weight, ad.HealthPlanetData.BodyFat)
-        if err != nil {
-            fmt.Println("Failed\n")
-            return err
+        fmt.Printf("new_data: %s (weight: %fkg, fat: %f%%)", ad.Date, ad.HealthPlanetData.Weight, ad.HealthPlanetData.BodyFat)
+        if !dry {
+            err = s.Fitbit.CreateWeightAndFatLog(ad.Date, ad.HealthPlanetData.Weight, ad.HealthPlanetData.BodyFat)
+            if err != nil {
+                fmt.Println(": Failed")
+                return err
+            }
+            fmt.Println(": Success")
         }
-        fmt.Println("Success\n")
+        fmt.Printf("\n")
     }
 
     // add new data to fitbit

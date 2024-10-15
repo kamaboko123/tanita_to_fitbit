@@ -10,6 +10,7 @@ import (
     "encoding/json"
     "errors"
     "time"
+    "log/slog"
 )
 
 type Auth struct {
@@ -37,10 +38,12 @@ type Token struct {
 type Client struct {
     url string
     auth *Auth
+    logger *slog.Logger
+    Timezone *time.Location
 }
 
 
-type WeightLog struct {
+type WeightLogResponse struct {
     Weight []struct {
         Bmi float64 `json:"bmi"`
         Date string `json:"date"`
@@ -50,6 +53,30 @@ type WeightLog struct {
         Time string `json:"time"`
         Weight float64 `json:"weight"`
     } `json:"weight"`
+}
+
+type WeightLog struct {
+    Date time.Time
+    Weight float64
+    Fat float64
+}
+
+func (w *WeightLogResponse) ToWeightLog(timezone *time.Location) []WeightLog {
+    var weight_logs []WeightLog
+    for _, wl := range w.Weight {
+        date, err := time.ParseInLocation("2006-01-02 15:04", fmt.Sprintf("%s %s", wl.Date, wl.Time), timezone)
+        if err != nil {
+            continue
+        }
+
+        weight_logs = append(weight_logs, WeightLog{Date: date, Weight: wl.Weight, Fat: wl.Fat})
+    }
+
+    return weight_logs
+}
+
+func (w *WeightLog) String() string {
+    return fmt.Sprintf("(%s)Weight: %f, Fat: %f", w.Date, w.Weight, w.Fat)
 }
 
 
@@ -161,7 +188,7 @@ func (a *Auth) RefreshToken() error {
     defer resp.Body.Close()
 
     if resp.StatusCode != 200 {
-        return errors.New("Failed to get token")
+        return errors.New("[fitbit]Failed to get token")
     }
 
     body, _ := ioutil.ReadAll(resp.Body)
@@ -180,11 +207,11 @@ func (a *Auth) RefreshToken() error {
 }
 
 
-func NewClient(url string, auth *Auth) *Client {
-    return &Client{url: url, auth: auth}
+func NewClient(url string, auth *Auth, logger *slog.Logger, timezone *time.Location) *Client {
+    return &Client{url: url, auth: auth, logger:logger, Timezone: timezone}
 }
 
-func (c *Client) GetWeightLog(date time.Time) (*WeightLog, error) {
+func (c *Client) GetWeightLog(date time.Time) (*WeightLogResponse, error) {
     u, err := url.Parse(c.url)
     if err != nil {
         return nil, err
@@ -193,7 +220,6 @@ func (c *Client) GetWeightLog(date time.Time) (*WeightLog, error) {
     _path := "/1/user/[user-id]/body/log/weight/date/[date].json"
     _path = strings.Replace(_path, "[user-id]", c.auth.token.User_id, -1)
     _path = strings.Replace(_path, "[date]", date.Format("2006-01-02"), -1)
-    //_path = strings.Replace(_path, "[date]", time.Now().Format("2006-01-02"), -1)
 
     u.Path = _path
     
@@ -213,12 +239,12 @@ func (c *Client) GetWeightLog(date time.Time) (*WeightLog, error) {
     }
     defer resp.Body.Close()
 
+    body, _ := ioutil.ReadAll(resp.Body)
     if resp.StatusCode != 200 {
-        return nil, errors.New("Failed to get weight log")
+        return nil, errors.New(fmt.Sprintf("[fitbit]Failed to get weight log: (%d) %s", resp.StatusCode, body))
     }
 
-    body, _ := ioutil.ReadAll(resp.Body)
-    weight_log := WeightLog{}
+    weight_log := WeightLogResponse{}
     err = json.Unmarshal(body, &weight_log)
 
     return &weight_log, nil
@@ -277,7 +303,7 @@ func (c *Client) CreateWeightLog(date time.Time, weight float64) error {
     //fmt.Println(string(body))
     
     if resp.StatusCode != 201 {
-        return errors.New("Failed to create weight log")
+        return errors.New("[fitbit]Failed to create weight log")
     }
 
     return nil
@@ -319,7 +345,7 @@ func (c *Client) CreateFatLog(date time.Time, fat float64) error {
     //fmt.Println(string(body))
 
     if resp.StatusCode != 201 {
-        return errors.New("Failed to create weight log")
+        return errors.New("[fitbit]Failed to create weight log")
     }
 
     return nil

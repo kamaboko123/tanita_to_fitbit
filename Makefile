@@ -12,7 +12,10 @@ $(TARGET): $(SRC) $(SUBMOD)
 	go build -o $(TARGET) $(SRC)
 
 clean:
-	rm -f $(TARGET)
+	rm -rf $(TARGET_DIR)
+
+clean-all: clean
+	go clean --modcache
 
 run: $(TARGET)
 	$(TARGET)
