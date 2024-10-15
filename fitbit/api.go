@@ -61,18 +61,18 @@ type WeightLog struct {
     Fat float64
 }
 
-func (w *WeightLogResponse) ToWeightLog(timezone *time.Location) []WeightLog {
+func (w *WeightLogResponse) ToWeightLog(timezone *time.Location) ([]WeightLog, error) {
     var weight_logs []WeightLog
     for _, wl := range w.Weight {
         date, err := time.ParseInLocation("2006-01-02 15:04", fmt.Sprintf("%s %s", wl.Date, wl.Time), timezone)
         if err != nil {
-            continue
+            return nil, err
         }
 
         weight_logs = append(weight_logs, WeightLog{Date: date, Weight: wl.Weight, Fat: wl.Fat})
     }
 
-    return weight_logs
+    return weight_logs, nil
 }
 
 func (w *WeightLog) String() string {

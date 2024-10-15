@@ -41,7 +41,10 @@ func (s *Syncr) Sync(dry bool) error {
         if err != nil {
             return err
         }
-        fb_weight := fb_weight_resp.ToWeightLog(s.Fitbit.Timezone)
+        fb_weight, err := fb_weight_resp.ToWeightLog(s.Fitbit.Timezone)
+        if err != nil {
+            return err
+        }
 
         Logger.Debug(fmt.Sprintf("[Fitbit(targets)] %s", fb_weight))
         is_exist := false
