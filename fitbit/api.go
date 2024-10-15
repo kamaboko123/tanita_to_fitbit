@@ -222,6 +222,8 @@ func (c *Client) GetWeightLog(date time.Time) (*WeightLogResponse, error) {
     _path = strings.Replace(_path, "[date]", date.Format("2006-01-02"), -1)
 
     u.Path = _path
+
+    c.logger.Debug(fmt.Sprintf("[fitbit]Get weight log: %s", u.String()))
     
     client := &http.Client{}
     req, err := http.NewRequest("GET", u.String(), nil)
