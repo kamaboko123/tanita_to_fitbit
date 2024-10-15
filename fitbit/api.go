@@ -64,7 +64,7 @@ type WeightLog struct {
 func (w *WeightLogResponse) ToWeightLog(timezone *time.Location) ([]WeightLog, error) {
     var weight_logs []WeightLog
     for _, wl := range w.Weight {
-        date, err := time.ParseInLocation("2006-01-02 15:04", fmt.Sprintf("%s %s", wl.Date, wl.Time), timezone)
+        date, err := time.ParseInLocation("2006-01-02 15:04:05", fmt.Sprintf("%s %s", wl.Date, wl.Time), timezone)
         if err != nil {
             return nil, err
         }
